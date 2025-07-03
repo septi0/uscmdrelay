@@ -1,9 +1,9 @@
 from setuptools import setup
 
-# import usbackup.info without importing the package
+# import uscmdrelay.info without importing the package
 info = {}
 
-with open("usbackup/info.py") as fp:
+with open("uscmdrelay/info.py") as fp:
     exec(fp.read(), info)
 
 with open("README.md", "r") as f:

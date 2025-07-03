@@ -1,6 +1,6 @@
 __app_name__ = "UsCmdRelay"
 __package_name__ = "uscmdrelay"
-__version__ = "0.1.2"
+__version__ = "0.1.4"
 __description__ = "A lightweight command relay server"
 __author__ = "Septimiu Ujica"
 __author_email__ = "me@septi.ro"
