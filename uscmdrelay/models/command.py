@@ -21,6 +21,7 @@ class ExecModel(BaseModel):
     timeout: int = Field(60, ge=1)
     env: dict[str, str] = {}
     cwd: str | None = None
+    log_output: bool = False
 
     model_config = ConfigDict(extra='forbid')
 

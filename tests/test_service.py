@@ -367,6 +367,25 @@ def test_client_leaving_before_its_reply_is_not_an_error(service):
 
     assert 'Traceback' not in service.logs()
 
+def test_key_generate_needs_no_config_and_changes_nothing(service, tmp_path):
+    before = service.config.read_text()
+    result = subprocess.run([sys.executable, '-m', 'uscmdrelay', 'key', 'generate'], env={**ENV, 'HOME': str(tmp_path)}, cwd=tmp_path, capture_output=True, text=True)
+
+    assert result.returncode == 0
+    assert service.config.read_text() == before
+
+    lines = result.stdout.splitlines()
+
+    assert lines[0].startswith('Key (shown only once')
+    assert lines[2] == 'Hash (for the config):'
+
+    token, key_hash = lines[1].strip(), lines[3].strip()
+
+    service.config.write_text(before.replace('keys:\n', f'keys:\n  - {{name: g, hash: "{key_hash}", clusters: [main]}}\n'))
+    service.start()
+
+    assert service.post('/run/main/plain', token)[0] == 200
+
 def test_same_port_twice_is_a_config_error(service):
     service.config.write_text('listeners:\n  tcp: {port: 7777}\n  http: {port: 7777}\n')
 

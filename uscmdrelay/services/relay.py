@@ -6,7 +6,7 @@ import secrets
 import time
 from dataclasses import dataclass
 from typing import Iterable
-from uscmdrelay.exceptions import ConditionNotMet, RelayError
+from uscmdrelay.exceptions import AuthenticationError, ConditionNotMet, RelayError
 from uscmdrelay.libraries import payload
 from uscmdrelay.libraries.cmd_exec import CmdExec, CmdExecError, CmdResult
 from uscmdrelay.libraries.throttled_log import ThrottledLog
@@ -58,13 +58,11 @@ class RelayService:
         self._on_failure = model.on_failure
 
     def authenticate(self, token: object, peer_ip: str) -> KeyModel:
-        key = self._auth.find_key(token, peer_ip)
-
-        if key is None:
-            self._failed_auth_log.warning(f'Authentication failed from {peer_ip}')
+        try:
+            return self._auth.find_key(token, peer_ip)
+        except AuthenticationError as e:
+            self._failed_auth_log.warning(f'Authentication failed from {peer_ip}: {e}')
             raise RelayError('Authentication failed', ResponseCode.AUTH_FAILED)
-
-        return key
 
     async def handle(self, raw: bytes, peer_ip: str, *, key: KeyModel | None = None, target: tuple[str, str] | None = None, headers: Iterable[tuple[str, str]] = ()) -> ResponseModel:
         """ Process a client message. The target comes from the listener when the message itself does not carry it. """
@@ -343,7 +341,10 @@ class RelayService:
         else:
             self._logger.info(summary)
 
-        self._logger.debug(f'{run.name} run={run.id} stdout={result.stdout!r}')
+        if run.command.log_output:
+            self._logger.info(f'{run.name} run={run.id} stdout={result.stdout!r} stderr={result.stderr!r}')
+        else:
+            self._logger.debug(f'{run.name} run={run.id} stdout={result.stdout!r}')
 
     def _build_response(self, run: _Run, result: CmdResult) -> ResponseModel:
         if result.timed_out:

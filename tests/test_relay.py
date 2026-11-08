@@ -5,6 +5,7 @@ import pytest
 from conftest import LIMITED_TOKEN, TOKEN, build_model
 from uscmdrelay.models.response import ResponseCode
 from uscmdrelay.models.uscmdrelay import UsCmdRelayModel
+from uscmdrelay.services.auth import hash_token
 from uscmdrelay.services.relay import RelayService
 
 PRINT_ARGS = {'cmd': '/usr/bin/printf "[%s]\\n" ${x}'}
@@ -51,8 +52,6 @@ def test_unknown_cluster_and_command(make_relay):
     assert call(relay, message('nope')).code == ResponseCode.UNKNOWN_COMMAND
 
 def test_allowed_ips():
-    from uscmdrelay.services.auth import hash_token
-
     model = UsCmdRelayModel.model_validate({
         'listeners': {'tcp': {'port': 1}},
         'keys': [{'name': 'k', 'hash': f'sha256:{hash_token(TOKEN)}', 'clusters': ['*'], 'allowed_ips': ['10.0.0.5', '192.168.1.0/24']}],
@@ -371,3 +370,43 @@ def test_key_is_not_logged(make_relay, caplog):
 
     assert TOKEN not in caplog.text
     assert 'wrong-secret-token' not in caplog.text
+
+@pytest.mark.parametrize('raw,reason', [
+    (json.dumps({'command': 'run'}).encode(), 'no key provided'),
+    (message(auth_key='wrong'), 'unknown key'),
+])
+def test_failed_auth_reason_is_logged(make_relay, caplog, raw, reason):
+    caplog.set_level(logging.WARNING)
+
+    assert call(make_relay({'run': {'cmd': '/bin/true'}}), raw).message == 'Authentication failed'
+    assert f'Authentication failed from 10.0.0.1: {reason}' in caplog.text
+
+def test_blocked_address_is_logged_but_looks_like_a_wrong_key(caplog):
+    caplog.set_level(logging.WARNING)
+
+    model = UsCmdRelayModel.model_validate({
+        'listeners': {'tcp': {'port': 1}},
+        'keys': [{'name': 'k', 'hash': f'sha256:{hash_token(TOKEN)}', 'clusters': ['*'], 'allowed_ips': ['10.0.0.5']}],
+        'clusters': {'default': {'run': {'cmd': '/bin/true'}}},
+    })
+    relay = RelayService(model, work_dir='/tmp', logger=logging.getLogger('test'))
+
+    blocked = call(relay, message(), peer_ip='10.0.0.6')
+
+    assert blocked.to_dict() == call(relay, message(auth_key='wrong'), peer_ip='10.0.0.7').to_dict()
+    assert 'key "k" is not allowed from this address' in caplog.text
+
+def test_log_output_writes_stdout_and_stderr(make_relay, caplog):
+    caplog.set_level(logging.INFO)
+
+    call(make_relay({'run': {'cmd': '''sh -c 'echo visible; echo problem >&2' ''', 'log_output': True}}), message())
+
+    assert "stdout='visible'" in caplog.text
+    assert "stderr='problem'" in caplog.text
+
+def test_output_is_not_logged_by_default(make_relay, caplog):
+    caplog.set_level(logging.INFO)
+
+    call(make_relay({'run': {'cmd': '/bin/echo hidden'}}), message())
+
+    assert 'hidden' not in caplog.text.replace('/bin/echo", "hidden', '')

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 (2026-11-08)
+
+- Failed logins are logged with the reason: no key, an unknown key, or a key used from an address it isn't allowed from. Replies are unchanged.
+- `log_output: true` writes a command's stdout and stderr to the log.
+- `key generate` prints a new key and its hash without changing the config, for configs managed by another tool.
+
 ## 1.0.0 (2026-11-08)
 
 Rewrite with an HTTP listener and a new config format.
@@ -20,7 +26,7 @@ Rewrite with an HTTP listener and a new config format.
 ### Upgrading from 0.x
 
 - `auth.conf` and `relays.conf` are replaced by one `config.yml`, see `config.sample.yml`. Listen addresses moved there from `--host` and `--port`, and the default address is now `127.0.0.1`.
-- Create new keys with `uscmdrelay key add`, old keys can't be carried over.
+- Create new keys with `uscmdrelay key add` rather than carrying over the old ones, which were stored in plain text.
 - `--shell-exec` is gone. Move pipes and redirects into a script.
 - Clients can no longer append arbitrary arguments. A command has to name what it receives: `arguments` from existing TCP clients is available as `${arguments.0}`, `${arguments.1}` and so on.
 - Commands no longer run in the service's working directory. Set `cwd:` on any that depend on one.

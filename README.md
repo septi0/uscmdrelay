@@ -73,9 +73,12 @@ uscmdrelay [--config FILE] [--log FILE] [--log-level LEVEL] [--version] <command
                                               Add an empty cluster, optionally with a key for it
   key add NAME --clusters CLUSTER [CLUSTER...] [--allowed-ip IP]
                                               Create a new key
+  key generate                                Print a new key and its hash, without changing the config
   key rotate NAME                             Replace a key, keeping its clusters and allowed addresses
   key remove NAME                             Revoke a key
 ```
+
+Use `key generate` when the config is managed by another tool: put the hash in the config yourself and give the key to the client.
 
 The `cluster` and `key` commands update the config while keeping its comments and ordering, refuse any change that would make it invalid, and tell a running service to reload. `--allowed-ip` can be repeated and accepts IPs and CIDR ranges.
 
@@ -142,7 +145,7 @@ Rules:
 - Commands run in an empty private directory, so relative paths in values reach nothing. Use `cwd:` to run a command somewhere else.
 - When a command exits, its exit code is what counts. Anything it left running keeps running.
 
-Each run is logged with its key name, source address, full command, exit code and duration, so a command should not take secrets through its arguments.
+Each run is logged with its key name, source address, full command, exit code and duration, so a command should not take secrets through its arguments. Successful output isn't logged unless the command sets `log_output: true`, which is useful for background commands, where there is no reply to read it from.
 
 ### Conditions
 
@@ -201,7 +204,30 @@ Keys and clusters apply at once and running commands are untouched, so a backgro
 
 The key goes in an `Authorization: Bearer <key>` header. Clients that can't set headers can put an `auth_key` field in the body instead. When the header is present it decides alone, and keys are never accepted in a URL.
 
-Webhook example, for a sender that can set an authorization header (in Gitea, the Authorization Header field of the webhook, with content type `application/json`): point it at `http://<host>:7778/run/deploy/docker-rebuild` and set the header to `Bearer <key>`.
+#### Webhook example: build on a new Gitea tag
+
+```yaml
+docker:
+  build-tag:
+    cmd: /opt/scripts/build.sh ${repository.name} -t ${ref}
+    when:
+      headers.x-gitea-event: 'create'
+      ref_type: 'tag'
+    fields:
+      ref: '[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}'
+    background: true
+    timeout: 3600
+```
+
+In the Gitea webhook, set the target to `http://<host>:7778/run/docker/build-tag`, the content type to `application/json`, the Authorization Header to `Bearer <key>`, and trigger on the Create event only. A new tag sends both `push` and `create`; only `create` has the short tag name in `ref`, and `when` also ignores new branches and deleted tags.
+
+Gitea refuses to call private addresses unless they are listed under `[security]` `ALLOWED_HOST_LIST` in its config (`[webhook]` on older versions).
+
+To test the connection without running anything, send a request the conditions skip. It should reply 200 with status `skipped`:
+
+```
+curl -X POST -H 'Authorization: Bearer <key>' -H 'X-Gitea-Event: push' -d '{}' http://<host>:7778/run/docker/build-tag
+```
 
 ### TCP
 

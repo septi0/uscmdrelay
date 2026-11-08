@@ -1,4 +1,3 @@
-import secrets
 import signal
 from contextlib import contextmanager
 from typing import Callable, Iterator
@@ -6,7 +5,7 @@ from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from uscmdrelay.exceptions import UsCmdRelayRuntimeError
 from uscmdrelay.libraries.config_file import ConfigFile
 from uscmdrelay.libraries.pid_file import PidFile
-from uscmdrelay.services.auth import hash_token
+from uscmdrelay.services.auth import generate_key
 
 __all__ = ['AdminService']
 
@@ -30,8 +29,8 @@ class AdminService:
     def rotate_key(self, name: str) -> str:
         """ Replace a key, keeping its clusters and allowed addresses. Returns the new key. """
         with self._editing() as data:
-            token = secrets.token_urlsafe(32)
-            self._find_key(data, name)['hash'] = self._hash(token)
+            token, key_hash = generate_key()
+            self._find_key(data, name)['hash'] = key_hash
 
             return token
 
@@ -77,11 +76,11 @@ class AdminService:
         if any(key['name'] == name for key in data['keys']):
             raise UsCmdRelayRuntimeError(f'Key "{name}" already exists')
 
-        token = secrets.token_urlsafe(32)
+        token, key_hash = generate_key()
         entry = CommentedMap()
 
         entry['name'] = name
-        entry['hash'] = self._hash(token)
+        entry['hash'] = key_hash
         entry['clusters'] = self._inline_list(clusters)
 
         if allowed_ips:
@@ -90,9 +89,6 @@ class AdminService:
         data['keys'].append(entry)
 
         return token
-
-    def _hash(self, token: str) -> str:
-        return f'sha256:{hash_token(token)}'
 
     def _inline_list(self, items: list[str]) -> CommentedSeq:
         sequence = CommentedSeq(items)

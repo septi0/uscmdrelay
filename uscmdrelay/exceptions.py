@@ -1,6 +1,9 @@
 class UsCmdRelayRuntimeError(Exception):
     pass
 
+class AuthenticationError(Exception):
+    pass
+
 class ConditionNotMet(Exception):
     pass
 

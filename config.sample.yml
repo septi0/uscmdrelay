@@ -50,4 +50,5 @@ clusters:
       # env: {REGISTRY_TOKEN: "${REGISTRY_TOKEN}"} # environment variables, ${VAR} comes from secrets.env next to this file (permissions 600) - optional
       # cwd: /srv/app # directory to run in. Default: an empty private directory, so relative paths in values reach nothing
       # on_failure: /opt/scripts/alert-deploy.sh ${run.id} # replaces the global on_failure for this command, null turns it off
+      # log_output: true # also write stdout and stderr to the log, up to limits.max_output_size. Default: false
       hide_output: false # return only success or failure, without the output. Default: false

@@ -4,9 +4,16 @@ import argparse
 from uscmdrelay.manager import UsCmdRelayManager
 from uscmdrelay.exceptions import ConditionNotMet, RelayError, UsCmdRelayRuntimeError
 from uscmdrelay.info import __app_name__, __version__, __description__
+from uscmdrelay.services.auth import generate_key
 
 def print_key(token: str) -> None:
     print(f'Key (shown only once, give this to the client):\n  {token}')
+
+def print_generated_key() -> None:
+    token, key_hash = generate_key()
+
+    print_key(token)
+    print(f'Hash (for the config):\n  {key_hash}')
 
 def print_reload_status(reloaded: bool) -> None:
     if reloaded:
@@ -95,6 +102,8 @@ def main():
     key_add_parser.add_argument('--clusters', dest='clusters', nargs='+', required=True, help='Clusters the key can use, or "*" for all')
     key_add_parser.add_argument('--allowed-ip', dest='allowed_ip', action='append', help='IP or CIDR range the key can be used from. Can be used multiple times')
 
+    key_actions.add_parser('generate', help='Print a new key and its hash, without changing the config')
+
     key_rotate_parser = key_actions.add_parser('rotate', help='Replace a key, keeping its clusters and allowed addresses')
     key_rotate_parser.add_argument('name', help='Name of the key')
 
@@ -105,6 +114,10 @@ def main():
 
     if args.command is None:
         parser.print_help()
+        sys.exit()
+
+    if args.command == 'key' and args.action == 'generate':
+        print_generated_key()
         sys.exit()
 
     if args.command == 'cluster' and args.allowed_ip and not args.key:
