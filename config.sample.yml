@@ -38,7 +38,7 @@ clusters:
       cmd: /opt/scripts/rebuild.sh --repo=${repository.full_name} --commit=${after} # never run through a shell. ${a.b} is a field of the message, $${X} is a literal ${X}
       format: json # format of the messages it accepts: json or env (KEY=VALUE lines). Default: json
       # when: # conditions that must all be true, otherwise the request is skipped with a 200 and nothing runs - optional
-      #   ref: 'refs/heads/.+' # regex that must match the whole value
+      #   ref: 'refs/heads/.+' # regex that must match the whole value. For a list, any one item has to match
       #   release.draft: {exists: false} # field must be absent or null. Use true for a field that must be present
       fields: # regexes that must match the whole value - optional. Fields used in cmd and not listed here must match the built-in safe pattern (letters, digits, . _ / : @ + -, starting with a letter, digit or underscore, no .. or :/)
         repository.full_name: '^myorg/[a-z0-9._-]+$'

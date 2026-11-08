@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2 (2026-11-08)
+
+- A `when` regex on a list now matches when any item does, for example `repository.topics: 'docker-app'`.
+
 ## 1.0.1 (2026-11-08)
 
 - Failed logins are logged with the reason: no key, an unknown key, or a key used from an address it isn't allowed from. Replies are unchanged.

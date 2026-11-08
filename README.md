@@ -161,7 +161,7 @@ docker-release:
     repository.full_name: {exists: true}  # present and not null
 ```
 
-All conditions must be true. They are checked after authentication and before field validation, so a skipped request can't fail on a missing `${ref}`. A missing field makes a regex condition false. Objects, lists and values over `limits.max_field_size` never match a regex, and only `exists` works on objects and lists. For "or" within one field use the regex (`'push|create'`); anything more complex belongs in a script, which gets the message on stdin.
+All conditions must be true. They are checked after authentication and before field validation, so a skipped request can't fail on a missing `${ref}`. A missing field makes a regex condition false. A list matches a regex when any of its items does, which is useful for something like `repository.topics`. Objects and values over `limits.max_field_size` never match a regex. For "or" within one field use the regex (`'push|create'`); anything more complex belongs in a script, which gets the message on stdin.
 
 ### Secrets
 

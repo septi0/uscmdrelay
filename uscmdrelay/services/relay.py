@@ -182,6 +182,10 @@ class RelayService:
         if condition.exists is not None:
             return condition.exists == (value is not None)
 
+        # a list matches when any of its items does
+        return any(self._matches_condition(condition, item) for item in (value if isinstance(value, list) else [value]))
+
+    def _matches_condition(self, condition: ConditionModel, value: object) -> bool:
         text = self._to_text(value)
 
         return text is not None and len(text) <= self._limits.max_field_size and condition.pattern.fullmatch(text) is not None

@@ -71,7 +71,28 @@ def test_nested_field_and_array_index(make_relay):
     assert call(relay, message(repo={'tags': ['v1']})).status == 'ok'
     assert call(relay, message(repo={'tags': []})).status == 'skipped'
 
-@pytest.mark.parametrize('value', [{'a': 1}, [1], None])
+@pytest.mark.parametrize('topics,status', [
+    (['docker-app'], 'ok'),
+    (['go', 'docker-app', 'homelab'], 'ok'),
+    (['docker-compose', 'go'], 'skipped'),
+    (['my-docker-app'], 'skipped'),
+    ([], 'skipped'),
+    ([['docker-app']], 'skipped'),
+    ([{'name': 'docker-app'}], 'skipped'),
+    ([None], 'skipped'),
+])
+def test_regex_on_a_list_matches_any_item(make_relay, topics, status):
+    relay = make_relay({'run': {'cmd': '/bin/true', 'when': {'repository.topics': 'docker-app'}}})
+
+    assert call(relay, message(repository={'topics': topics})).status == status
+
+def test_list_item_over_the_field_limit_does_not_match(make_relay):
+    relay = make_relay({'run': {'cmd': '/bin/true', 'when': {'a': '.*'}}}, limits={'max_field_size': 5})
+
+    assert call(relay, message(a=['x' * 6])).status == 'skipped'
+    assert call(relay, message(a=['x' * 6, 'ok'])).status == 'ok'
+
+@pytest.mark.parametrize('value', [{'a': 1}, None])
 def test_non_text_values_do_not_match_a_regex(make_relay, value):
     relay = make_relay({'run': {'cmd': '/bin/true', 'when': {'a': '.*'}}})
 
