@@ -2,168 +2,268 @@
 
 ## Description
 
-**UsCmdRelay** is a lightweight socket server, which allows controlled remote execution of commands on the host system based on authentication keys and command cluster definitions.
+**UsCmdRelay** is a small server that runs pre-defined commands on a host on behalf of authenticated clients. Commands are written by the admin in a config file; clients can only choose which one to run and supply values the admin has explicitly allowed.
 
-It is intended to be used as a command executor, not as a remote shell and to be used in a controlled environment, where the clients are trusted (internal network, VPN, etc.).
-
-Communication between clients and the server is done over TCP sockets where the server listens on the specified port and the clients connect to it. Data is exchanged in JSON format. Before executing commands, the server employs auth_keys for client authentication, providing controlled access to the command clusters.
+It listens on plain TCP and on HTTP (typically for webhooks), and both follow the same rules. It is a command executor, not a remote shell, and is meant for trusted networks such as a LAN or VPN: keys and data travel unencrypted.
 
 ## Features
-- Remote command execution
-- Client authentication using auth_keys
-- Granular authentication control over command clusters
-- Command clustering
+
+- TCP and HTTP listeners, with JSON or `KEY=VALUE` messages
+- Values from a message placed into a command with `${field.name}`, each one validated
+- Keys stored only as hashes, each limited to chosen clusters and optionally to chosen addresses
+- Commands never run through a shell
+- Background commands for slow work, with overlapping runs merged
+- A command to run when a background command fails, for alerts
+- Limits on connections, message size, time, output and concurrency
+- Keys and clusters can be changed without a restart
+- A dry run that shows what a message would execute
 
 ## Software requirements
 
-- python3
-
+- Python 3.10 or newer
+- Linux
 
 ## Installation
-
-#### 1. As a package
 
 ```
 pip install --upgrade <git-repo>
 ```
 
-or 
+or from a checkout, without installing:
 
 ```
 git clone <git-repo>
 cd <git-repo>
-python setup.py install
+pip install -r requirements.txt
+./run.py <parameters>
 ```
 
-#### 2. As a standalone script
+## Quick start
+
+Copy `config.sample.yml` to one of the locations below, as `config.yml`, and adjust it. The first file found is used, unless `--config` is given:
+
+- `/etc/uscmdrelay/config.yml`
+- `/etc/opt/uscmdrelay/config.yml`
+- `~/.config/uscmdrelay/config.yml`
+
+Then:
 
 ```
-git clone <git-repo>
+uscmdrelay cluster add my-cluster --key my-client    # prints the key, only once
+uscmdrelay configtest
+uscmdrelay serve
 ```
 
-## Server Usage
-
-The UsCmdRelay server can be started in 3 ways (depending on the instalation method):
-
-#### 1. As a package (if installed globally)
+Add commands to the cluster by editing the config, reload, then send a request:
 
 ```
-/usr/bin/uscmdrelay <parameters>
+curl -X POST -H 'Authorization: Bearer <key>' -d '{"name": "app"}' http://127.0.0.1:7778/run/my-cluster/my-command
 ```
 
-#### 2. As a package (if installed in a virtualenv)
+## Command line
 
 ```
-<path-to-venv>/bin/uscmdrelay <parameters>
+uscmdrelay [--config FILE] [--log FILE] [--log-level LEVEL] [--version] <command>
+
+  configtest                                  Test the configuration file
+  serve                                       Start the server
+  test COMMAND [--data FILE] [--header "Name: value"]
+                                              Show what a message would run, without running it
+  cluster add NAME [--key NAME] [--allowed-ip IP]
+                                              Add an empty cluster, optionally with a key for it
+  key add NAME --clusters CLUSTER [CLUSTER...] [--allowed-ip IP]
+                                              Create a new key
+  key rotate NAME                             Replace a key, keeping its clusters and allowed addresses
+  key remove NAME                             Revoke a key
 ```
 
-#### 3. As a standalone script
+The `cluster` and `key` commands update the config while keeping its comments and ordering, refuse any change that would make it invalid, and tell a running service to reload. `--allowed-ip` can be repeated and accepts IPs and CIDR ranges.
+
+`test` is the quickest way to check a template and its regexes. `--data` is a file holding the message, or `-` for stdin:
 
 ```
-<git-clone-dir>/run.py <parameters>
+$ uscmdrelay test deploy::docker-rebuild --data push.json
+Would run: /opt/scripts/rebuild.sh --repo=myorg/app --commit=abc123
 ```
 
-Check "Server command line arguments" section for more information about the available parameters.
+When a `when` condition isn't met, `test` prints `Would skip:` and the condition.
 
-## Client Usage
+Exit codes: `0` on success or a clean stop, `1` when the service failed or `test` found the message would be refused, `2` for startup and config errors.
 
-Clients can connect to the server using any method, as long as they can communicate over TCP sockets and exchange data in JSON format. The following example is a simple request using bash, netcat and jq:
+## Configuration
 
-```
-echo '{"auth_key": "my_auth_key", "command": "command-name"}' | nc <server-ip> <server-port> | jq
-```
+`config.sample.yml` documents every setting. Unknown settings are errors, so a typo never goes unnoticed.
 
-## Server command line arguments
+The config decides what gets executed, so it and its directory must not be writable by group or others, and must be owned by root or the user running the service. The strongest setup is root-owned and read-only to the service, so neither the service nor its commands can grant themselves access.
 
-```
-uscmdrelay [-h] [--log LOG_FILE] [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--shell-exec] [--version] {configtest,serve} ...
+### Defaults
 
-options:
-  -h, --help            show this help message and exit
-  --log LOG_FILE        Log file where to write logs
-  --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
-                        Log level
-  --shell-exec          Use shell to execute commands (not recommended)
-  --version             show program's version number and exit
+| Setting | Default |
+|---|---|
+| Listen address | `127.0.0.1` |
+| `limits.max_connections` | 256 |
+| `limits.max_connections_per_ip` | 32 |
+| `limits.max_message_size` | 2 MiB |
+| `limits.max_field_size` | 4,096 characters |
+| Time for a client to send its message or read the reply | 10 seconds (fixed) |
+| Command `timeout` | 60 seconds |
+| `limits.max_output_size` | 1 MiB |
+| `limits.max_running` | 16 |
+| `limits.max_queued` | 64 |
+| `shutdown_timeout` | 30 seconds |
 
-Commands:
-  {configtest,serve}
-    configtest          Test configuration file
-    serve               Start uscmdrelay server
-        options:
-        -h, --help   show this help message and exit
-        --host HOST  Host to listen on
-        --port PORT  Port to listen on
-```
+### Commands
 
-## Client data format:
-
-The client must send the data as a JSON encoded string with the following keys:
-    
-```
-{
-    "auth_key": "my_auth_key",
-    "command": "command-name",
-    "arguments": ["arg1", "arg2", "arg3"]
-}
+```yaml
+clusters:
+  deploy:
+    docker-rebuild:
+      cmd: /opt/scripts/rebuild.sh --repo=${repository.full_name} --commit=${after}
+      fields:
+        repository.full_name: '^myorg/[a-z0-9._-]+$'
+        ref: '^refs/heads/main$'
+      background: true
+      timeout: 1800
 ```
 
-- `auth_key` - Auth key to use for authentication
-- `command` - Command to execute. It can be the command name when using the `default` relay cluster or the command name prefixed with the relay cluster name (e.g. `cluster1::command-name`)
-- `arguments` - List of arguments to pass to the command
+`${repository.full_name}` is replaced by that field of the message. Dots walk into objects and numbers index arrays (`${commits.0.id}`). A command only receives the fields it names. The full message, without the key, is also passed on stdin.
 
-## Server response format:
+Rules:
+
+- The command is split into arguments when the config loads and values are put in afterwards, so a value with spaces or `;` stays inside its argument.
+- A missing field, an object or a list rejects the request and nothing runs.
+- Each value must match the built-in safe pattern (letters, digits and `. _ / : @ + -`, starting with a letter, digit or underscore, no `..` or `:/`) unless `fields` gives it its own regex. Regexes must match the whole value. Avoid nested repeats such as `(a+)+`: a value crafted against one can freeze the whole server.
+- Anything listed under `fields` must exist and match, even if `cmd` doesn't use it. That is how a command is limited to, for example, one branch. A request that doesn't match counts as a failure for the sender, so filter on the sender's side too if it can.
+- A field can have a default, which also makes it optional: `branch: {pattern: '^[a-z]+$', default: main}`.
+- HTTP request headers are fields too, with lowercase names: `${headers.x-gitea-event}`. `Authorization`, `Proxy-Authorization` and `Cookie` are never available, and a message body can't supply `headers`.
+- Placeholders are refused in the program position, in shell commands such as `sh -c "... ${x}"`, and as the program started by wrappers such as `sudo ${x}`. Pipes and redirects belong in a script.
+- A literal `${X}` is written `$${X}`. Plain `$X` and `$$` are left alone.
+- Commands run with a minimal environment (`PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_ALL`, `TZ`) plus their `env`.
+- Commands run in an empty private directory, so relative paths in values reach nothing. Use `cwd:` to run a command somewhere else.
+- When a command exits, its exit code is what counts. Anything it left running keeps running.
+
+Each run is logged with its key name, source address, full command, exit code and duration, so a command should not take secrets through its arguments.
+
+### Conditions
+
+`when` decides whether a request is for this command at all. If any condition isn't met, the reply is 200 with status `skipped`, nothing runs, and the sender sees a successful delivery. Use `fields` to reject bad requests, and `when` to ignore ones that aren't relevant.
+
+```yaml
+docker-release:
+  cmd: /opt/scripts/release.sh ${ref}
+  when:
+    ref: 'refs/tags/.+'                   # regex, must match the whole value
+    headers.x-gitea-event: 'push'         # headers are fields too
+    release.draft: {exists: false}        # absent or null
+    repository.full_name: {exists: true}  # present and not null
+```
+
+All conditions must be true. They are checked after authentication and before field validation, so a skipped request can't fail on a missing `${ref}`. A missing field makes a regex condition false. Objects, lists and values over `limits.max_field_size` never match a regex, and only `exists` works on objects and lists. For "or" within one field use the regex (`'push|create'`); anything more complex belongs in a script, which gets the message on stdin.
+
+### Secrets
+
+Anything sensitive a command needs goes in `secrets.env` next to the config, as `KEY=VALUE` lines with permissions 600, and is referenced in `env:` values only:
+
+```yaml
+env: {REGISTRY_TOKEN: "${REGISTRY_TOKEN}"}
+```
+
+### Background commands
+
+With `background: true` the caller gets a reply right away and failures only appear in the log. Use it for anything slower than the sender will wait; webhook senders often give up within seconds.
+
+For each command and set of arguments there is one run in progress and at most one waiting, and the newest request replaces the waiting one. Different arguments run in parallel.
+
+To hear about failures, set `on_failure`, at the top of the config for every command or on one command to replace it (`on_failure: null` turns it off for that command). It runs after a non-zero exit, a timeout, or a command that couldn't start, with the command's stderr on stdin. It doesn't run for commands stopped by a shutdown, and its own failures are only logged.
+
+```yaml
+on_failure: /opt/scripts/alert.sh ${run.command} ${run.exit_code} ${run.id}
+```
+
+`${run.exit_code}` is `none` when the command never started.
+
+### Applying changes
+
+The `cluster` and `key` commands apply themselves. After editing the config by hand:
 
 ```
-{
-    "status": "command_status",
-    "message": "return message
-    "code": "return code"
-}
+uscmdrelay configtest
+systemctl reload uscmdrelay
 ```
 
-- `status` - Response status. Can be one of the following:
-    - `success` - Command executed successfully
-    - `error` - Command execution failed
-- `message` - Return message from the command / error message
-- `code` - Response status code. Can be one of the following:
-    - `0` - success
-    - `10xx` - authentication errors
-    - `20xx` - client data errors
-    - `30xx` - command execution errors
-    - `9999` - server error
+Keys and clusters apply at once and running commands are untouched, so a background run a revoked key had already queued still executes. If the new config is invalid it is refused and the previous one stays active. Listener and limit changes need a restart. When the service and the admin commands run as different users, set `pid_file` in the config so they find each other.
 
-## Configuration files
-For sample configuration files see `auth.sample.conf` and `relays.sample.conf`. Aditionally, you can copy theese files to `/etc/uscmdrelay/`, `/etc/opt/uscmdrelay/` or `~/.config/uscmdrelay/` and adjust the values to your needs.
+## Client usage
 
-#### Configuring auth (auth.conf)
-For security reasons, the auth configuration file must be owned by the user that runs the server and must not be accessible by other users. (600 permissions)
+### HTTP
 
-Each section in the configuration file is an auth key. The name of the section is the auth key that will be specified with the `auth_key` property by the client.
+`POST /run/<cluster>/<command>` with the message as the body.
 
-Section properties:
-- `description` - Description of the auth key
-- `auth_clusters`- List of auth clusters that the auth key is allowed to use. Use `*` to allow all auth clusters.
+The key goes in an `Authorization: Bearer <key>` header. Clients that can't set headers can put an `auth_key` field in the body instead. When the header is present it decides alone, and keys are never accepted in a URL.
 
-#### Configuring relays (relays.conf)
-Each section in the configuration file is a relay cluster. The name of the section is the name of the relay cluster that will be specified as a prefix with the `command` property by the client.
+Webhook example, for a sender that can set an authorization header (in Gitea, the Authorization Header field of the webhook, with content type `application/json`): point it at `http://<host>:7778/run/deploy/docker-rebuild` and set the header to `Bearer <key>`.
 
-Relay definition:
+### TCP
+
+One message per connection. The key and the command are fields of the message, and the command is `name` for the `default` cluster or `cluster::name`.
+
+JSON is one line:
+
 ```
-<command-name>=<command>
+echo '{"auth_key": "<key>", "command": "deploy::my-command", "name": "app"}' | nc <host> 7777 | jq
 ```
+
+Env format is `KEY=VALUE` lines ending at a blank line or when the connection closes. Lines split on the first `=`, `#` comments are ignored, and quotes are not processed:
+
+```
+printf 'auth_key=<key>\ncommand=deploy::my-command\nname=app\n\n' | nc <host> 7777
+```
+
+A message starting with `{` is JSON, anything else is env format, and it must match the command's `format`.
+
+### Response
+
+Both listeners return the same JSON. On TCP it is one line.
+
+```
+{"status": "ok", "message": "...", "code": 0, "exit_code": 0, "run_id": "9f3a1c07"}
+```
+
+`status` is `ok`, `accepted`, `skipped` or `error`, and `exit_code` is only present when a command ran to completion. `run_id` appears on any reply where a command ran or was accepted, and matches the `run=` value in the log. An accepted run that a newer request replaces never runs, so its ID won't appear there. `message` is the command's stdout on success, and its stderr on failure, or `exited with code N` when stderr is empty. With `hide_output: true` it only says whether the command succeeded.
+
+| Outcome | `code` | HTTP |
+|---|---|---|
+| Success | 0 | 200 |
+| Accepted for background run | 0 | 202 |
+| Skipped by a `when` condition | 0 | 200 |
+| Authentication failed | 1000 | 401 |
+| Unknown cluster | 2000 | 404 |
+| Unknown command | 2001 | 404 |
+| Missing or invalid field | 2002 | 422 |
+| Wrong format for this command | 2003 | 400 |
+| Malformed or oversized message | 2099 | 400 or 413 |
+| Command failed | 3001 | 500 |
+| Command timed out | 3002 | 500 |
+| Too many commands running or queued, or shutting down | 3003 | 503 |
+| Server error | 9999 | 500 |
+
+A wrong key, a key without access to the cluster and a blocked address all get the same answer, whether or not the command exists.
 
 ## Systemd service
 
-To run UsCmdRelay as a service, have it start on boot and restart on failure, create a systemd service file in `/etc/systemd/system/uscmdrelay.service` and copy the content from `uscmdrelay.sample.service` file, adjusting the `ExecStart` parameter based on the installation method.
-
-After that, run the following commands:
+Copy `uscmdrelay.sample.service` to `/etc/systemd/system/uscmdrelay.service`, adjusting `ExecStart` to the installation method and `User=` to the account commands should run as. Then:
 
 ```
 systemctl daemon-reload
-systemctl enable uscmdrelay.service
-systemctl start uscmdrelay.service
+systemctl enable --now uscmdrelay.service
 ```
+
+Keep `KillMode=mixed` from the sample: with systemd's default, a stop sends SIGTERM to running commands at once instead of letting them finish. `TimeoutStopSec` must be longer than `shutdown_timeout` plus 15 seconds, so running commands can be stopped cleanly.
+
+## Upgrading from 0.x
+
+See `CHANGELOG.md`.
+
 ## Disclaimer
 
 This software is provided as is, without any warranty. Use at your own risk. The author is not responsible for any damage caused by this software.

@@ -1,0 +1,2 @@
+READ_TIMEOUT: int = 10
+WRITE_TIMEOUT: int = 10

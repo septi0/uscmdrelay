@@ -10,7 +10,7 @@ with open("README.md", "r") as f:
     long_description = f.read()
 
 with open("requirements.txt") as f:
-    requirements = [line.strip() for line in f]
+    requirements = [line.strip() for line in f if line.strip()]
 
 setup(
     name=info['__package_name__'],
@@ -21,11 +21,15 @@ setup(
     license=info['__license__'],
     author=info['__author__'],
     author_email=info['__author_email__'],
-    author_url=info['__author_url__'],
-    python_requires='>=3.9',
+    url=info['__author_url__'],
+    python_requires='>=3.10',
     install_requires=requirements,
     packages=[
         'uscmdrelay',
+        'uscmdrelay.libraries',
+        'uscmdrelay.listeners',
+        'uscmdrelay.models',
+        'uscmdrelay.services',
     ],
     classifiers=[
         "Programming Language :: Python :: 3",

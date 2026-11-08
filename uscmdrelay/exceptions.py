@@ -1,14 +1,10 @@
-class GracefulExit(SystemExit):
-    code = 1
-
-class UsCMdRelayConfigError(Exception):
+class UsCmdRelayRuntimeError(Exception):
     pass
 
-class ClientRequestError(Exception):
+class ConditionNotMet(Exception):
     pass
 
-# raise processError(message, code)
-class ProcessError(Exception):
-    def __init__(self, message, code):
+class RelayError(Exception):
+    def __init__(self, message: str, code: int):
         super().__init__(message)
         self.code = code

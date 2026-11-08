@@ -1,14 +1,21 @@
 [Unit]
 Description=UsCmdRelay
 After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
 
 [Service]
 Type=simple
 User=root
 Group=root
-ExecStart=/usr/bin/uscmdrelay --log=/var/log/uscmdrelay/uscmdrelay.log serve --host=0.0.0.0 --port=7777
-Restart=always
+ExecStart=/usr/bin/uscmdrelay --log=/var/log/uscmdrelay/uscmdrelay.log serve
+ExecReload=/bin/kill -HUP $MAINPID
+# only the service gets SIGTERM on stop, so running commands get time to finish
+KillMode=mixed
+Restart=on-failure
 RestartSec=5
+# must be longer than shutdown_timeout plus 15 seconds, so running commands can be stopped cleanly
+TimeoutStopSec=60
 
 [Install]
 WantedBy=multi-user.target

@@ -1,0 +1,53 @@
+listeners: # at least one is required, leave one out to turn it off
+  tcp:
+    host: 127.0.0.1 # address to listen on. Keys and data travel unencrypted, only expose this on a trusted network. Default: 127.0.0.1
+    port: 7777
+  http:
+    host: 127.0.0.1
+    port: 7778 # requests go to POST /run/<cluster>/<command>
+
+# pid_file: /run/uscmdrelay/uscmdrelay.pid # needed when the service and the admin commands run as different users. Default: /var/run/uscmdrelay.pid for root, otherwise ~/.uscmdrelay.pid
+# shutdown_timeout: 30 # seconds running commands get to finish when the service stops. Default: 30
+
+# on_failure: /opt/scripts/alert.sh ${run.command} ${run.exit_code} ${run.id} # runs when a background command fails, with its stderr on stdin. ${run.exit_code} is "none" if it never started
+
+# limits:
+#   max_connections: 256 # open connections, across both listeners
+#   max_connections_per_ip: 32 # open connections from one address
+#   max_message_size: 2097152 # bytes, for a TCP message or an HTTP body
+#   max_field_size: 4096 # characters in one field value
+#   max_output_size: 1048576 # bytes of stdout and of stderr captured from a command
+#   max_running: 16 # commands running at once
+#   max_queued: 64 # distinct background commands queued
+
+# Manage with: uscmdrelay key add <name> --clusters <cluster>, uscmdrelay key remove <name>
+keys:
+  # - name: gitea # shown in logs in place of the key
+  #   hash: sha256:... # only the hash is stored, the key itself is printed once when created
+  #   clusters: [deploy] # clusters it can use. Use ['*'] (quoted) for all clusters
+  #   allowed_ips: [10.0.0.5, 192.168.1.0/24] # addresses it can be used from - optional
+
+# Add with: uscmdrelay cluster add <name>. Commands are written here by hand, apply with: systemctl reload uscmdrelay
+clusters:
+  default: # commands called without a cluster prefix on TCP
+    uptime:
+      cmd: /usr/bin/uptime
+
+  deploy:
+    docker-rebuild:
+      cmd: /opt/scripts/rebuild.sh --repo=${repository.full_name} --commit=${after} # never run through a shell. ${a.b} is a field of the message, $${X} is a literal ${X}
+      format: json # format of the messages it accepts: json or env (KEY=VALUE lines). Default: json
+      # when: # conditions that must all be true, otherwise the request is skipped with a 200 and nothing runs - optional
+      #   ref: 'refs/heads/.+' # regex that must match the whole value
+      #   release.draft: {exists: false} # field must be absent or null. Use true for a field that must be present
+      fields: # regexes that must match the whole value - optional. Fields used in cmd and not listed here must match the built-in safe pattern (letters, digits, . _ / : @ + -, starting with a letter, digit or underscore, no .. or :/)
+        repository.full_name: '^myorg/[a-z0-9._-]+$'
+        ref: '^refs/heads/main$' # a listed field must exist and match even if cmd does not use it
+        # branch: {pattern: '^[a-z0-9._/-]+$', default: main} # long form, a field with a default does not have to be in the message
+        # headers.x-gitea-event: '^push$' # HTTP request headers are fields too, with lowercase names (never Authorization or Cookie)
+      background: true # reply 202 right away and run afterwards, for anything slower than the sender is willing to wait. Default: false
+      timeout: 1800 # seconds before the command is stopped. Default: 60
+      # env: {REGISTRY_TOKEN: "${REGISTRY_TOKEN}"} # environment variables, ${VAR} comes from secrets.env next to this file (permissions 600) - optional
+      # cwd: /srv/app # directory to run in. Default: an empty private directory, so relative paths in values reach nothing
+      # on_failure: /opt/scripts/alert-deploy.sh ${run.id} # replaces the global on_failure for this command, null turns it off
+      hide_output: false # return only success or failure, without the output. Default: false
